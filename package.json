@@ -1,0 +1,38 @@
+{
+  "name": "writing-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "writing-scraper": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/max-winderbaum/writing-scraper.git"
+  },
+  "keywords": [
+    "scraper",
+    "articles",
+    "extraction"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "linkedom": "^0.16.0",
+    "playwright": "^1.40.0",
+    "sitemapper": "^3.2.0",
+    "xml2js": "^0.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/xml2js": "^0.4.14",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
