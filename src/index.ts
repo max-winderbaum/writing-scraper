@@ -1,19 +1,21 @@
 import { discoverArticleUrls } from './discovery.js';
 import { createScraper, ArticleScraper } from './scraper.js';
-import { extractArticles } from './extractor.js';
+import { extractArticle } from './extractor.js';
 import type { Article } from './types.js';
 
 export interface ExtractOptions {
   count?: number;
   verbose?: boolean;
+  maxAttempts?: number;
 }
 
 export async function extractArticlesFromSite(
   siteUrl: string,
   options: ExtractOptions = {}
 ): Promise<Article[]> {
-  const count = options.count || 10;
+  const targetCount = options.count || 10;
   const verbose = options.verbose ?? true;
+  const maxAttempts = options.maxAttempts || targetCount * 3; // Try up to 3x URLs to hit target
 
   let scraper: ArticleScraper | null = null;
 
@@ -22,37 +24,72 @@ export async function extractArticlesFromSite(
     if (verbose) console.log('Initializing browser...');
     scraper = await createScraper();
 
-    // Discover article URLs
+    // Discover article URLs (get more than needed to handle failures)
     if (verbose) console.log(`\nDiscovering articles from ${siteUrl}...`);
 
-    // Pass scraper's fetch function for link-following fallback
     const discovery = await discoverArticleUrls(
       siteUrl,
-      count,
+      maxAttempts,
       (url) => scraper!.fetchPageHtml(url)
     );
 
     if (verbose) {
-      console.log(`\nDiscovered ${discovery.urls.length} URLs via ${discovery.method}`);
-      console.log('URLs to scrape:');
-      discovery.urls.forEach((url, i) => console.log(`  ${i + 1}. ${url}`));
+      console.log(`Discovered ${discovery.urls.length} URLs via ${discovery.method}`);
     }
 
-    // Scrape each article page
-    if (verbose) console.log('\nScraping articles...');
-    const pages = await scraper.scrapePages(discovery.urls, {
-      waitForJs: true,
-      blockResources: true,
-    });
+    // Process URLs until we have enough successful extractions
+    const articles: Article[] = [];
+    const processedUrls = new Set<string>();
+    let urlIndex = 0;
 
-    if (verbose) console.log(`\nSuccessfully scraped ${pages.length} pages`);
+    if (verbose) console.log(`\nExtracting ${targetCount} articles...`);
 
-    // Extract article content
-    if (verbose) console.log('\nExtracting content...');
-    const articles = extractArticles(pages, { minBodyLength: 100 });
+    while (articles.length < targetCount && urlIndex < discovery.urls.length) {
+      const url = discovery.urls[urlIndex];
+      urlIndex++;
+
+      if (processedUrls.has(url)) continue;
+      processedUrls.add(url);
+
+      try {
+        if (verbose) {
+          console.log(`\n[${articles.length + 1}/${targetCount}] Scraping: ${url}`);
+        }
+
+        const page = await scraper.scrapePage(url, {
+          waitForJs: true,
+          blockResources: true,
+        });
+
+        const article = extractArticle(page, { minBodyLength: 100 });
+
+        if (article) {
+          articles.push(article);
+          if (verbose) {
+            console.log(`  ✓ Extracted: "${article.title}" (${article.body.length} chars)`);
+          }
+        } else {
+          if (verbose) {
+            console.log(`  ✗ Skipped (extraction failed or too short)`);
+          }
+        }
+
+        // Politeness delay
+        if (urlIndex < discovery.urls.length && articles.length < targetCount) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+        }
+      } catch (error) {
+        if (verbose) {
+          console.log(`  ✗ Error: ${error instanceof Error ? error.message : error}`);
+        }
+      }
+    }
 
     if (verbose) {
-      console.log(`\nExtracted ${articles.length} articles`);
+      console.log(`\nExtracted ${articles.length}/${targetCount} articles`);
+      if (articles.length < targetCount) {
+        console.log(`(Could not find ${targetCount} extractable articles from ${processedUrls.size} URLs tried)`);
+      }
     }
 
     return articles;
